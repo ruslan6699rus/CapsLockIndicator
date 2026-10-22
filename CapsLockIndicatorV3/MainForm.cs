@@ -68,7 +68,6 @@ namespace CapsLockIndicatorV3
 
         private int unsupportedReason = -1;
 
-
         private bool numIcoOnlyWhenActive;
         private bool capsIcoOnlyWhenActive;
         private bool scrollIcoOnlyWhenActive;
@@ -120,9 +119,9 @@ namespace CapsLockIndicatorV3
             indicatorGroup.Enabled = !showNoNotification.Checked;
 
             generalIcon.ContextMenu =
-                numLockIcon.ContextMenu =
-                capsLockIcon.ContextMenu =
-                scrollLockIcon.ContextMenu =
+            numLockIcon.ContextMenu =
+            capsLockIcon.ContextMenu =
+            scrollLockIcon.ContextMenu =
                 contextMenu1;
 
             HandleCreated += (sender, e) =>
@@ -320,13 +319,6 @@ namespace CapsLockIndicatorV3
 
         void UpdateLanguageFiles(KeyValuePair<string, DllInfo>[] dlls)
         {
-            //var sb = new StringBuilder();
-
-            //foreach (var kvp in dlls)
-            //    sb.AppendLine(kvp.Key + "\t" + kvp.Value);
-
-            //MessageBox.Show(sb.ToString());
-
             BeginInvoke((MethodInvoker)delegate
             {
                 var w = new LanguageDownloadProgressForm();
@@ -334,7 +326,6 @@ namespace CapsLockIndicatorV3
                 w.DownloadLangFiles(dlls);
                 w.FormClosed += (sender, e) =>
                 {
-                    //w.Close();
                     w.Dispose();
                     Native.SetNativeEnabled(this, true);
                 };
@@ -409,8 +400,6 @@ namespace CapsLockIndicatorV3
             var pt = GetRectCenter(tabControl1.GetTabRect(1));
             tutorialTimer.Stop();
             tutorialToolTip.Active = true;
-            // Hack to fix incorrect step/tip placement on first invokation
-            // See: https://stackoverflow.com/a/8716963
             tutorialToolTip.Show(string.Empty, tabControl1, pt, 1);
             tutorialToolTip.Show(
                 strings.settingsChangedToolTip,
@@ -456,7 +445,6 @@ namespace CapsLockIndicatorV3
 
         private void Wc_DownloadStringCompleted(object sender, DownloadStringCompletedEventArgs e)
         {
-
             try
             {
 #if !(DEBUG && TEST_EOL)
@@ -617,7 +605,7 @@ namespace CapsLockIndicatorV3
             borderGroup.ForeColor =
             bdSizeLabel.ForeColor =
             onlyShowWhenActiveCheckBox.ForeColor =
-            dark ? Color.White : SystemColors.WindowText;
+                dark ? Color.White : SystemColors.WindowText;
 
             enableNumInd.FlatStyle =
             enableCapsInd.FlatStyle =
@@ -640,7 +628,7 @@ namespace CapsLockIndicatorV3
             cbPersistentCapsOn.FlatStyle =
             cbPersistentScrollOff.FlatStyle =
             cbPersistentScrollOn.FlatStyle =
-            dark ? FlatStyle.Standard : FlatStyle.System;
+                dark ? FlatStyle.Standard : FlatStyle.System;
 
             enableNumInd.DarkMode =
             enableCapsInd.DarkMode =
@@ -664,17 +652,17 @@ namespace CapsLockIndicatorV3
             cbPersistentCapsOn.DarkMode =
             cbPersistentScrollOff.DarkMode =
             cbPersistentScrollOn.DarkMode =
-            dark;
+                dark;
 
             downloadIcons.LinkColor =
-            dark ? Color.White : SystemColors.HotTrack;
+                dark ? Color.White : SystemColors.HotTrack;
 
             BackColor = dark ? Color.FromArgb(255, 32, 32, 32) : SystemColors.Window;
             ForeColor = dark ? Color.White : SystemColors.WindowText;
             aboutPanelTopBorder.BackColor =
             appNameLabel.LinkColor =
             appNameLabel.ActiveLinkColor =
-            dark ? Color.FromArgb(255, 196, 204, 238) : Color.FromArgb(255, 52, 77, 180); ;
+                dark ? Color.FromArgb(255, 196, 204, 238) : Color.FromArgb(255, 52, 77, 180); ;
             logo.Image = (Bitmap)resources.GetObject("logo" + (dark ? "_dark" : ""));
 
             foreach (TabPage p in tabControl1.TabPages)
@@ -756,17 +744,9 @@ namespace CapsLockIndicatorV3
 
                     if (c.Name.Length > 2 ? c.Name == Thread.CurrentThread.CurrentUICulture.Name : c.TwoLetterISOLanguageName == Thread.CurrentThread.CurrentUICulture.TwoLetterISOLanguageName)
                         selectIndex = index;
-                    // if (c.TwoLetterISOLanguageName == Thread.CurrentThread.CurrentUICulture.TwoLetterISOLanguageName)
                     index++;
                 }
             }
-
-            //if (SettingsManager.Get<int>("selectedUICulture") < 0)
-            //    localeComboBox.SelectedIndex = selectIndex;
-            //else if (SettingsManager.Get<int>("selectedUICulture") < localeComboBox.Items.Count)
-            //    localeComboBox.SelectedIndex = SettingsManager.Get<int>("selectedUICulture");
-            //else
-            //    localeComboBox.SelectedIndex = 0;
 
             if (SettingsManager.Has("selectedUICulture"))
             {
@@ -792,13 +772,8 @@ namespace CapsLockIndicatorV3
 
         public IEnumerable<CultureInfo> GetSupportedCulture()
         {
-            //Get all culture 
             CultureInfo[] culture = CultureInfo.GetCultures(CultureTypes.AllCultures);
-
-            //Find the location where application installed.
             string exeLocation = Path.GetDirectoryName(Uri.UnescapeDataString(new UriBuilder(Assembly.GetExecutingAssembly().CodeBase).Path));
-
-            //Return all culture for which satellite folder found with culture code.
             return culture.Where(cultureInfo => Directory.Exists(Path.Combine(exeLocation, cultureInfo.Name)));
         }
 
@@ -864,7 +839,31 @@ namespace CapsLockIndicatorV3
             ApplyEOLStrings();
         }
 
-        // This timer ticks approx. 60 times a second (overkill?)
+        void ShowCapsOverlay()
+        {
+            ShowOverlay(new IndicatorTrigger()
+            {
+                DisplayText = KeyHelper.isCapslockActive ?
+                  (SettingsManager.Get<string>("customMessageCapsOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOn") : string.Format(strings.keyIsOn, "AR/Caps lock")) :
+                  (SettingsManager.Get<string>("customMessageCapsOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOff") : string.Format(strings.keyIsOff, "AR/Caps lock")),
+                NewState = KeyHelper.isCapslockActive,
+                Key = IndicatorKey.Caps
+            });
+        }
+
+        void ShowScrollOverlay()
+        {
+            ShowOverlay(new IndicatorTrigger()
+            {
+                DisplayText = KeyHelper.isScrolllockActive ?
+                  (SettingsManager.Get<string>("customMessageScrollOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOn") : string.Format(strings.keyIsOn, "DMR/Scroll lock")) :
+                  (SettingsManager.Get<string>("customMessageScrollOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOff") : string.Format(strings.keyIsOff, "DMR/Scroll lock")),
+                NewState = KeyHelper.isScrolllockActive,
+                Key = IndicatorKey.Scroll
+            });
+        }
+
+        // This timer ticks approx. 60 times a second
         void UpdateTimerTick(object sender, EventArgs e)
         {
             var showNum = enableNumIcon.Checked && !showNoIcons.Checked && (!numIcoOnlyWhenActive || (numIcoOnlyWhenActive && KeyHelper.isNumlockActive));
@@ -894,32 +893,17 @@ namespace CapsLockIndicatorV3
                 ShowOverlay(new IndicatorTrigger()
                 {
                     DisplayText = KeyHelper.isNumlockActive ?
-                        (SettingsManager.Get<string>("customMessageNumOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageNumOn") : string.Format(strings.keyIsOn, strings.numLock)) :
-                        (SettingsManager.Get<string>("customMessageNumOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageNumOff") : string.Format(strings.keyIsOff, strings.numLock)),
+                      (SettingsManager.Get<string>("customMessageNumOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageNumOn") : string.Format(strings.keyIsOn, strings.numLock)) :
+                      (SettingsManager.Get<string>("customMessageNumOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageNumOff") : string.Format(strings.keyIsOff, strings.numLock)),
                     NewState = KeyHelper.isNumlockActive,
                     Key = IndicatorKey.Num
                 });
-            //ShowOverlay("Numlock is " + (KeyHelper.isNumlockActive ? "on" : "off"), KeyHelper.isNumlockActive);
 
             if (capsState != KeyHelper.isCapslockActive && enableCapsInd.Checked && !showNoNotification.Checked)
-                ShowOverlay(new IndicatorTrigger()
-                {
-                    DisplayText = KeyHelper.isCapslockActive ?
-                        (SettingsManager.Get<string>("customMessageCapsOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOn") : string.Format(strings.keyIsOn, strings.capsLock)) :
-                        (SettingsManager.Get<string>("customMessageCapsOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOff") : string.Format(strings.keyIsOff, strings.capsLock)),
-                    NewState = KeyHelper.isCapslockActive,
-                    Key = IndicatorKey.Caps
-                });
+                ShowCapsOverlay();
 
             if (scrollState != KeyHelper.isScrolllockActive && enableScrollInd.Checked && !showNoNotification.Checked)
-                ShowOverlay(new IndicatorTrigger()
-                {
-                    DisplayText = KeyHelper.isScrolllockActive ?
-                        (SettingsManager.Get<string>("customMessageScrollOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOn") : string.Format(strings.keyIsOn, strings.scrollLock)) :
-                        (SettingsManager.Get<string>("customMessageScrollOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOff") : string.Format(strings.keyIsOff, strings.scrollLock)),
-                    NewState = KeyHelper.isScrolllockActive,
-                    Key = IndicatorKey.Scroll
-                });
+                ShowScrollOverlay();
 
             // Reset the values
             numState = KeyHelper.isNumlockActive;
@@ -932,36 +916,39 @@ namespace CapsLockIndicatorV3
             var isActive = trigger.NewState;
             int timeOut = SettingsManager.Get<int>("indDisplayTime");
             var alwaysShow = SettingsManager.Get<bool>("alwaysShowWhenActive") && isActive;
-            var showOnAllScreens = SettingsManager.Get<bool>("showNotificationOnAllScreens");
-            if (Application.OpenForms.OfType<IndicatorOverlay>().Any() && Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed).Any())
+
+            var existingOverlay = Application.OpenForms
+                .OfType<IndicatorOverlay>()
+                .FirstOrDefault(f => !f.IsDisposed && f.OverlayKey == trigger.Key);
+
+            if (existingOverlay != null)
             {
-                IndicatorOverlay indicatorOverlay = Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed).First();
-                indicatorOverlay.UpdateIndicator(
-                      trigger
-                    , timeOut
-                    , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
-                    , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
-                    , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
-                    , SettingsManager.Get<int>("bdSize")
-                    , SettingsManager.GetOrDefault<Font>("indFont")
-                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                    , SettingsManager.Get<int>("indOpacity")
-                    , alwaysShow
+                existingOverlay.UpdateIndicator(
+                    trigger
+                  , timeOut
+                  , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
+                  , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
+                  , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
+                  , SettingsManager.Get<int>("bdSize")
+                  , SettingsManager.GetOrDefault<Font>("indFont")
+                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                  , SettingsManager.Get<int>("indOpacity")
+                  , alwaysShow
                 );
             }
             else
             {
                 IndicatorOverlay indicatorOverlay = new IndicatorOverlay(
-                      trigger
-                    , timeOut
-                    , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
-                    , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
-                    , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
-                    , SettingsManager.Get<int>("bdSize")
-                    , SettingsManager.GetOrDefault<Font>("indFont")
-                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                    , SettingsManager.Get<int>("indOpacity")
-                    , alwaysShow
+                    trigger
+                  , timeOut
+                  , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
+                  , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
+                  , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
+                  , SettingsManager.Get<int>("bdSize")
+                  , SettingsManager.GetOrDefault<Font>("indFont")
+                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                  , SettingsManager.Get<int>("indOpacity")
+                  , alwaysShow
                 );
             }
         }
@@ -972,43 +959,47 @@ namespace CapsLockIndicatorV3
             if (timeOut < 0)
                 timeOut = 2000;
             var alwaysShow = false;
-            if (Application.OpenForms.OfType<IndicatorOverlay>().Any() && Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed).Any())
+
+            var existingOverlay = Application.OpenForms
+                .OfType<IndicatorOverlay>()
+                .FirstOrDefault(f => !f.IsDisposed && f.OverlayKey == IndicatorKey.None);
+
+            if (existingOverlay != null)
             {
-                IndicatorOverlay indicatorOverlay = Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed).First();
-                indicatorOverlay.UpdateIndicator(
-                      new IndicatorTrigger()
-                      {
-                          DisplayText = message,
-                          Key = IndicatorKey.None
-                      }
-                    , timeOut
-                    , SettingsManager.Get<Color>("indBgColourInactive")
-                    , SettingsManager.Get<Color>("indFgColourInactive")
-                    , SettingsManager.Get<Color>("indFgColourInactive")
-                    , SettingsManager.Get<int>("bdSize")
-                    , SettingsManager.GetOrDefault<Font>("indFont")
-                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                    , SettingsManager.Get<int>("indOpacity")
-                    , alwaysShow
+                existingOverlay.UpdateIndicator(
+                    new IndicatorTrigger()
+                    {
+                        DisplayText = message,
+                        Key = IndicatorKey.None
+                    }
+                  , timeOut
+                  , SettingsManager.Get<Color>("indBgColourInactive")
+                  , SettingsManager.Get<Color>("indFgColourInactive")
+                  , SettingsManager.Get<Color>("indFgColourInactive")
+                  , SettingsManager.Get<int>("bdSize")
+                  , SettingsManager.GetOrDefault<Font>("indFont")
+                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                  , SettingsManager.Get<int>("indOpacity")
+                  , alwaysShow
                 );
             }
             else
             {
                 IndicatorOverlay indicatorOverlay = new IndicatorOverlay(
-                      new IndicatorTrigger()
-                      {
-                          DisplayText = message,
-                          Key = IndicatorKey.None
-                      }
-                    , timeOut
-                    , SettingsManager.Get<Color>("indBgColourInactive")
-                    , SettingsManager.Get<Color>("indFgColourInactive")
-                    , SettingsManager.Get<Color>("indFgColourInactive")
-                    , SettingsManager.Get<int>("bdSize")
-                    , SettingsManager.GetOrDefault<Font>("indFont")
-                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                    , SettingsManager.Get<int>("indOpacity")
-                    , alwaysShow
+                    new IndicatorTrigger()
+                    {
+                        DisplayText = message,
+                        Key = IndicatorKey.None
+                    }
+                  , timeOut
+                  , SettingsManager.Get<Color>("indBgColourInactive")
+                  , SettingsManager.Get<Color>("indFgColourInactive")
+                  , SettingsManager.Get<Color>("indFgColourInactive")
+                  , SettingsManager.Get<int>("bdSize")
+                  , SettingsManager.GetOrDefault<Font>("indFont")
+                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                  , SettingsManager.Get<int>("indOpacity")
+                  , alwaysShow
                 );
             }
         }
@@ -1039,34 +1030,34 @@ namespace CapsLockIndicatorV3
                 IEnumerable<XElement> parent = doc.Descendants("cli");
 
                 string latestVersion = parent.Descendants()
-                                             .Where(x => (string)x.Attribute("name") == "version_number")
-                                             .FirstOrDefault()
-                                             .Value;
+                    .Where(x => (string)x.Attribute("name") == "version_number")
+                    .FirstOrDefault()
+                    .Value;
 
                 string release_date = parent.Descendants()
-                                            .Where(x => (string)x.Attribute("name") == "release_date")
-                                            .FirstOrDefault()
-                                            .Value;
+                    .Where(x => (string)x.Attribute("name") == "release_date")
+                    .FirstOrDefault()
+                    .Value;
 
                 string release_url = parent.Descendants()
-                                           .Where(x => (string)x.Attribute("name") == "release_url")
-                                           .FirstOrDefault()
-                                           .Value;
+                    .Where(x => (string)x.Attribute("name") == "release_url")
+                    .FirstOrDefault()
+                    .Value;
 
                 string download_url = parent.Descendants()
-                                            .Where(x => (string)x.Attribute("name") == "download_url")
-                                            .FirstOrDefault()
-                                            .Value;
+                    .Where(x => (string)x.Attribute("name") == "download_url")
+                    .FirstOrDefault()
+                    .Value;
 
                 string changelog = parent.Descendants()
-                                         .Where(x => (string)x.Attribute("name") == "changelog")
-                                         .FirstOrDefault()
-                                         .Value;
+                    .Where(x => (string)x.Attribute("name") == "changelog")
+                    .FirstOrDefault()
+                    .Value;
 
                 string min_os = parent.Descendants()
-                                         .Where(x => (string)x.Attribute("name") == "minos")
-                                         .FirstOrDefault()
-                                         .Value;
+                    .Where(x => (string)x.Attribute("name") == "minos")
+                    .FirstOrDefault()
+                    .Value;
 
                 Version cVersion = new Version(currentVersion);
                 Version lVersion = new Version(latestVersion);
@@ -1076,7 +1067,6 @@ namespace CapsLockIndicatorV3
                 if (lVersion > cVersion)
 #endif
                 {
-
                     var rdate = DateTime.Parse(release_date, CultureInfo.InvariantCulture);
                     var release_date_formatted = rdate.ToLongDateString();
 
@@ -1124,6 +1114,12 @@ namespace CapsLockIndicatorV3
 
             if (SettingsManager.Get<bool>("checkForUpdates"))
                 doVersionCheck(false);
+
+            if (enableCapsInd.Checked && !showNoNotification.Checked)
+                ShowCapsOverlay();
+
+            if (enableScrollInd.Checked && !showNoNotification.Checked)
+                ShowScrollOverlay();
         }
 
         void ExitApplicationClick(object sender, EventArgs e)
@@ -1131,7 +1127,6 @@ namespace CapsLockIndicatorV3
             if (MessageBox.Show(strings.exitMessage, "CapsLock Indicator", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
             {
                 shouldClose = true;
-                //Close();
                 Exit();
             }
         }
@@ -1142,18 +1137,14 @@ namespace CapsLockIndicatorV3
 
         private void HideForm()
         {
-            //generalIcon.Visible = true;
-            //generalIcon.ShowBalloonTip(100);
             Hide();
             isHidden = true;
-            //Opacity = 1;
         }
 
         void GeneralIconMouseDoubleClick(object sender, MouseEventArgs e)
         {
             Show();
             Focus();
-            //generalIcon.Visible = false;
             isHidden = false;
             ShowInTaskbar = true;
         }
@@ -1246,7 +1237,6 @@ namespace CapsLockIndicatorV3
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             shouldClose = true;
-            //Close();
             Exit();
         }
 
@@ -1286,7 +1276,6 @@ namespace CapsLockIndicatorV3
                 previousLocaleIndex = localeComboBox.SelectedIndex;
             }
 
-            //SettingsManager.Set("selectedUICulture", localeComboBox.SelectedIndex);
             SettingsManager.Set("selectedLanguage", locale.localeString);
             SettingsManager.Save();
 
@@ -1339,7 +1328,7 @@ namespace CapsLockIndicatorV3
             numLockIcon.Visible =
             scrollLockIcon.Visible =
             generalIcon.Visible =
-            false;
+                false;
             Application.Exit();
         }
 
@@ -1352,8 +1341,6 @@ namespace CapsLockIndicatorV3
         {
             tableLayoutPanel3.Hide();
         }
-
-
 
         private void displayTimeSlider_Scroll(object sender, EventArgs e)
         {
@@ -1516,13 +1503,11 @@ namespace CapsLockIndicatorV3
         private void DarkModeCheckBox_CheckedChanged(object sender, EventArgs e)
         {
             var f = DarkModeChangingForm.Show(this, darkModeCheckBox.Checked);
-            //Opacity = 0;
             Hide();
             Enabled = false;
             Application.DoEvents();
             DarkModeProvider.SetDarkModeEnabled(darkModeCheckBox.Checked);
             Enabled = true;
-            //Opacity = 1;
             Show();
             f.Close();
         }
