@@ -1,0 +1,27 @@
+name: Build C# EXE
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Скачивание репозитория
+        uses: actions/checkout@v4
+
+      - name: Подключение сборщика MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Восстановление пакетов и сборка проекта
+        run: |
+          nuget restore CapsLockIndicatorV3.sln
+          msbuild CapsLockIndicatorV3.sln /p:Configuration=Release
+
+      - name: Выгрузка готового .exe файла
+        uses: actions/upload-artifact@v4
+        with:
+          name: CapsLockIndicatorV3
+          path: CapsLockIndicatorV3/bin/Release/CapsLockIndicatorV3.exe
