@@ -5,6 +5,7 @@
  */
 using System;
 using System.Drawing;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -99,7 +100,6 @@ namespace CapsLockIndicatorV3
             ASYNCWINDOWPOS = 0x4000;
         }
 
-
         const uint WS_EX_LAYERED = 0x80000;
         const uint WS_EX_TOPMOST = 0x00000008;
         const uint WS_EX_TOOLWINDOW = 0x00000080;
@@ -110,11 +110,14 @@ namespace CapsLockIndicatorV3
         const int WM_NCHITTEST = 0x84;
         const int HTTRANSPARENT = -1;
 
+        public IndicatorKey OverlayKey = IndicatorKey.None;
+
         private Size originalSize;
 
         private IndicatorDisplayPosition pos = IndicatorDisplayPosition.BottomRight;
 
         const int WINDOW_MARGIN = 16;
+        const int OVERLAY_GAP = 8;
         private double lastOpacity = 1;
         double opacity_timer_value = 2.0;
 
@@ -125,6 +128,25 @@ namespace CapsLockIndicatorV3
             0xB4
         );
         int BorderSize = 4;
+
+        private static int GetKeyOrder(IndicatorKey key)
+        {
+            switch (key)
+            {
+                case IndicatorKey.Caps: return 0;
+                case IndicatorKey.Scroll: return 1;
+                case IndicatorKey.Num: return 2;
+                default: return 3;
+            }
+        }
+
+        private static void UpdateAllOverlayPositions()
+        {
+            foreach (var f in Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed && f.Visible).ToList())
+            {
+                f.UpdatePosition();
+            }
+        }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
@@ -159,8 +181,7 @@ namespace CapsLockIndicatorV3
 
         protected override void OnShown(EventArgs e)
         {
-            UpdatePosition();
-
+            UpdateAllOverlayPositions();
             base.OnShown(e);
         }
 
@@ -175,43 +196,68 @@ namespace CapsLockIndicatorV3
 
             Size = new Size(Width, Height);
 
+            var visibleOverlays = Application.OpenForms
+                .OfType<IndicatorOverlay>()
+                .Where(f => !f.IsDisposed && f.Visible)
+                .OrderBy(f => GetKeyOrder(f.OverlayKey))
+                .ToList();
+
+            if (!visibleOverlays.Contains(this))
+            {
+                visibleOverlays.Add(this);
+                visibleOverlays = visibleOverlays.OrderBy(f => GetKeyOrder(f.OverlayKey)).ToList();
+            }
+
+            int totalWidth = visibleOverlays.Sum(f => f.Width) + OVERLAY_GAP * Math.Max(0, visibleOverlays.Count - 1);
+            int offsetX = 0;
+            foreach (var f in visibleOverlays)
+            {
+                if (f == this)
+                    break;
+                offsetX += f.Width + OVERLAY_GAP;
+            }
+
+            int leftPos = workingArea.X + WINDOW_MARGIN + offsetX;
+            int centerPos = workingArea.X + (workingArea.Width - totalWidth) / 2 + offsetX;
+            int rightPos = workingArea.Right - WINDOW_MARGIN - totalWidth + offsetX;
+
             switch (pos)
             {
                 case IndicatorDisplayPosition.TopLeft:
-                    Left = workingArea.X + WINDOW_MARGIN;
+                    Left = leftPos;
                     Top = workingArea.Y + WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.TopCenter:
-                    Left = workingArea.X + (workingArea.Width / 2 - Width / 2);
+                    Left = centerPos;
                     Top = workingArea.Y + WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.TopRight:
-                    Left = workingArea.X + workingArea.Left + (workingArea.Width - Width - WINDOW_MARGIN - workingArea.Left);
+                    Left = rightPos;
                     Top = workingArea.Y + WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.MiddleLeft:
-                    Left = workingArea.X + WINDOW_MARGIN;
+                    Left = leftPos;
                     Top = workingArea.Y + (workingArea.Height / 2 - Height / 2);
                     break;
                 case IndicatorDisplayPosition.MiddleCenter:
-                    Left = workingArea.X + (workingArea.Width / 2 - Width / 2);
+                    Left = centerPos;
                     Top = workingArea.Y + (workingArea.Height / 2 - Height / 2);
                     break;
                 case IndicatorDisplayPosition.MiddleRight:
-                    Left = workingArea.X + workingArea.Left + (workingArea.Width - Width - WINDOW_MARGIN - workingArea.Left);
+                    Left = rightPos;
                     Top = workingArea.Y + (workingArea.Height / 2 - Height / 2);
                     break;
                 case IndicatorDisplayPosition.BottomLeft:
-                    Left = workingArea.X + WINDOW_MARGIN;
-                    Top = workingArea.Y + workingArea.Top + (workingArea.Height - Height - WINDOW_MARGIN - workingArea.Top);
+                    Left = leftPos;
+                    Top = workingArea.Bottom - Height - WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.BottomCenter:
-                    Left = workingArea.X + (workingArea.Width / 2 - Width / 2);
-                    Top = workingArea.Y + workingArea.Top + (workingArea.Height - Height - WINDOW_MARGIN - workingArea.Top);
+                    Left = centerPos;
+                    Top = workingArea.Bottom - Height - WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.BottomRight:
-                    Left = workingArea.X + workingArea.Left + (workingArea.Width - Width - WINDOW_MARGIN - workingArea.Left);
-                    Top = workingArea.Y + workingArea.Top + (workingArea.Height - Height - WINDOW_MARGIN - workingArea.Top);
+                    Left = rightPos;
+                    Top = workingArea.Bottom - Height - WINDOW_MARGIN;
                     break;
                 default:
                     break;
@@ -226,15 +272,6 @@ namespace CapsLockIndicatorV3
 
             if (BorderSize > 0)
                 e.Graphics.DrawRectangle(new Pen(BorderColour, (int)(BorderSize * factor)), e.ClipRectangle);
-
-            //using (var sf = new StringFormat() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-            //using (var b = new SolidBrush(contentLabel.ForeColor))
-            //    e.Graphics.DrawString(contentLabel.Text, contentLabel.Font, b, new Rectangle(
-            //        Padding.Left,
-            //        Padding.Top,
-            //        Width - Padding.Horizontal,
-            //        Height - Padding.Vertical
-            //    ), sf);
 
             TextRenderer.DrawText(e.Graphics, contentLabel.Text, contentLabel.Font, new Rectangle(
                 Padding.Left,
@@ -272,15 +309,12 @@ namespace CapsLockIndicatorV3
 
         private void InitializeCommon()
         {
-            // Doesn't look very nice and is Win11 only
-            //var attribute = DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE;
-            //var preference = DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND;
-            //DwmSetWindowAttribute(Handle, attribute, ref preference, sizeof(uint));
         }
 
         public IndicatorOverlay(IndicatorTrigger trigger, int timeoutInMs, IndicatorDisplayPosition position)
         {
             pos = position;
+            OverlayKey = trigger.Key;
 
             if (IsDisposed)
                 return;
@@ -307,6 +341,7 @@ namespace CapsLockIndicatorV3
             }
             ClickThroughWindow();
             RecalculateSize();
+            UpdateAllOverlayPositions();
             BringToFrontNoFocus();
         }
 
@@ -315,10 +350,10 @@ namespace CapsLockIndicatorV3
             var ret = 0;
 
             pos = position;
+            OverlayKey = trigger.Key;
 
             InitializeComponent();
             InitializeCommon();
-
 
             contentLabel.Text = trigger.DisplayText;
             Font = font;
@@ -348,6 +383,7 @@ namespace CapsLockIndicatorV3
             if (ret != -1)
                 Show();
 
+            UpdateAllOverlayPositions();
             BringToFrontNoFocus();
         }
 
@@ -370,6 +406,7 @@ namespace CapsLockIndicatorV3
         public void UpdateIndicator(IndicatorTrigger trigger, IndicatorDisplayPosition position)
         {
             pos = position;
+            OverlayKey = trigger.Key;
             Opacity = 1;
             contentLabel.Text = trigger.DisplayText;
             opacity_timer_value = 2.0;
@@ -380,7 +417,7 @@ namespace CapsLockIndicatorV3
             ReapplyPadding();
             Show();
             RecalculateSize();
-            UpdatePosition();
+            UpdateAllOverlayPositions();
             SetWindowStyles();
             BringToFrontNoFocus();
         }
@@ -388,6 +425,7 @@ namespace CapsLockIndicatorV3
         public void UpdateIndicator(IndicatorTrigger trigger, int timeoutInMs, IndicatorDisplayPosition position)
         {
             pos = position;
+            OverlayKey = trigger.Key;
             Opacity = 1;
             contentLabel.Text = trigger.DisplayText;
             opacity_timer_value = 2.0;
@@ -408,15 +446,15 @@ namespace CapsLockIndicatorV3
             ReapplyPadding();
             Show();
             RecalculateSize();
-            UpdatePosition();
+            UpdateAllOverlayPositions();
             SetWindowStyles();
             BringToFrontNoFocus();
         }
 
-
         public void UpdateIndicator(IndicatorTrigger trigger, int timeoutInMs, Color bgColour, Color fgColour, Color bdColour, int bdSize, Font font, IndicatorDisplayPosition position, int indOpacity, bool alwaysShow)
         {
             pos = position;
+            OverlayKey = trigger.Key;
             var op = indOpacity / 100d;
             lastOpacity = op;
             SetOpacity(op);
@@ -445,7 +483,7 @@ namespace CapsLockIndicatorV3
             Show();
             RecalculateSize();
             Invalidate();
-            UpdatePosition();
+            UpdateAllOverlayPositions();
             SetWindowStyles();
             BringToFrontNoFocus();
         }
@@ -453,6 +491,7 @@ namespace CapsLockIndicatorV3
         void WindowCloseTimerTick(object sender, EventArgs e)
         {
             Hide();
+            UpdateAllOverlayPositions();
         }
 
         private void fadeTimer_Tick(object sender, EventArgs e)
@@ -479,10 +518,12 @@ namespace CapsLockIndicatorV3
             textSize.Height += Padding.Vertical;
             Size = textSize;
         }
+
         void BringToFrontNoFocus()
         {
             SetWindowPos(Handle, HWND_TOP, 0, 0, 0, 0, SetWindowPosFlags.DoNotActivate | SetWindowPosFlags.IgnoreResize | SetWindowPosFlags.IgnoreMove);
         }
+
         void ReapplyPadding()
         {
             Padding = SettingsManager.Get<Padding>("indPadding");
