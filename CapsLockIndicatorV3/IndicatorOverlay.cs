@@ -110,16 +110,17 @@ namespace CapsLockIndicatorV3
         const int WM_NCHITTEST = 0x84;
         const int HTTRANSPARENT = -1;
 
-        public IndicatorKey OverlayKey = IndicatorKey.None;
-
         private Size originalSize;
 
         private IndicatorDisplayPosition pos = IndicatorDisplayPosition.BottomRight;
 
         const int WINDOW_MARGIN = 16;
-        const int OVERLAY_GAP = 8;
+        const int SIBLING_GAP = 8; // Отступ между окном CapsLock и окном оружия
         private double lastOpacity = 1;
         double opacity_timer_value = 2.0;
+
+        // Флаг, отличающий окно оружия от стандартного окна индикатора клавиш
+        public bool IsWeaponOverlay { get; set; } = false;
 
         Color BorderColour = Color.FromArgb(
             0xFF,
@@ -128,25 +129,6 @@ namespace CapsLockIndicatorV3
             0xB4
         );
         int BorderSize = 4;
-
-        private static int GetKeyOrder(IndicatorKey key)
-        {
-            switch (key)
-            {
-                case IndicatorKey.Caps: return 0;
-                case IndicatorKey.Scroll: return 1;
-                case IndicatorKey.Num: return 2;
-                default: return 3;
-            }
-        }
-
-        private static void UpdateAllOverlayPositions()
-        {
-            foreach (var f in Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed && f.Visible).ToList())
-            {
-                f.UpdatePosition();
-            }
-        }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
@@ -181,7 +163,7 @@ namespace CapsLockIndicatorV3
 
         protected override void OnShown(EventArgs e)
         {
-            UpdateAllOverlayPositions();
+            UpdatePosition();
             base.OnShown(e);
         }
 
@@ -196,71 +178,71 @@ namespace CapsLockIndicatorV3
 
             Size = new Size(Width, Height);
 
-            var visibleOverlays = Application.OpenForms
-                .OfType<IndicatorOverlay>()
-                .Where(f => !f.IsDisposed && f.Visible)
-                .OrderBy(f => GetKeyOrder(f.OverlayKey))
-                .ToList();
-
-            if (!visibleOverlays.Contains(this))
-            {
-                visibleOverlays.Add(this);
-                visibleOverlays = visibleOverlays.OrderBy(f => GetKeyOrder(f.OverlayKey)).ToList();
-            }
-
-            int totalWidth = visibleOverlays.Sum(f => f.Width) + OVERLAY_GAP * Math.Max(0, visibleOverlays.Count - 1);
-            int offsetX = 0;
-            foreach (var f in visibleOverlays)
-            {
-                if (f == this)
-                    break;
-                offsetX += f.Width + OVERLAY_GAP;
-            }
-
-            int leftPos = workingArea.X + WINDOW_MARGIN + offsetX;
-            int centerPos = workingArea.X + (workingArea.Width - totalWidth) / 2 + offsetX;
-            int rightPos = workingArea.Right - WINDOW_MARGIN - totalWidth + offsetX;
-
             switch (pos)
             {
                 case IndicatorDisplayPosition.TopLeft:
-                    Left = leftPos;
+                    Left = workingArea.X + WINDOW_MARGIN;
                     Top = workingArea.Y + WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.TopCenter:
-                    Left = centerPos;
+                    Left = workingArea.X + (workingArea.Width / 2 - Width / 2);
                     Top = workingArea.Y + WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.TopRight:
-                    Left = rightPos;
+                    Left = workingArea.X + workingArea.Left + (workingArea.Width - Width - WINDOW_MARGIN - workingArea.Left);
                     Top = workingArea.Y + WINDOW_MARGIN;
                     break;
                 case IndicatorDisplayPosition.MiddleLeft:
-                    Left = leftPos;
+                    Left = workingArea.X + WINDOW_MARGIN;
                     Top = workingArea.Y + (workingArea.Height / 2 - Height / 2);
                     break;
                 case IndicatorDisplayPosition.MiddleCenter:
-                    Left = centerPos;
+                    Left = workingArea.X + (workingArea.Width / 2 - Width / 2);
                     Top = workingArea.Y + (workingArea.Height / 2 - Height / 2);
                     break;
                 case IndicatorDisplayPosition.MiddleRight:
-                    Left = rightPos;
+                    Left = workingArea.X + workingArea.Left + (workingArea.Width - Width - WINDOW_MARGIN - workingArea.Left);
                     Top = workingArea.Y + (workingArea.Height / 2 - Height / 2);
                     break;
                 case IndicatorDisplayPosition.BottomLeft:
-                    Left = leftPos;
-                    Top = workingArea.Bottom - Height - WINDOW_MARGIN;
+                    Left = workingArea.X + WINDOW_MARGIN;
+                    Top = workingArea.Y + workingArea.Top + (workingArea.Height - Height - WINDOW_MARGIN - workingArea.Top);
                     break;
                 case IndicatorDisplayPosition.BottomCenter:
-                    Left = centerPos;
-                    Top = workingArea.Bottom - Height - WINDOW_MARGIN;
+                    Left = workingArea.X + (workingArea.Width / 2 - Width / 2);
+                    Top = workingArea.Y + workingArea.Top + (workingArea.Height - Height - WINDOW_MARGIN - workingArea.Top);
                     break;
                 case IndicatorDisplayPosition.BottomRight:
-                    Left = rightPos;
-                    Top = workingArea.Bottom - Height - WINDOW_MARGIN;
+                    Left = workingArea.X + workingArea.Left + (workingArea.Width - Width - WINDOW_MARGIN - workingArea.Left);
+                    Top = workingArea.Y + workingArea.Top + (workingArea.Height - Height - WINDOW_MARGIN - workingArea.Top);
                     break;
                 default:
                     break;
+            }
+
+            // Если это второе окошко (индикатор оружия), сдвигаем его рядом с основным окном CapsLock
+            if (IsWeaponOverlay)
+            {
+                var mainOverlay = Application.OpenForms
+                    .OfType<IndicatorOverlay>()
+                    .FirstOrDefault(f => !f.IsDisposed && !f.IsWeaponOverlay && f.Visible);
+
+                if (mainOverlay != null)
+                {
+                    Top = mainOverlay.Top;
+
+                    // Для правых позиций ставим окно оружия СЛЕВА от окна CapsLock, для остальных — СПРАВА
+                    if (pos == IndicatorDisplayPosition.TopRight ||
+                        pos == IndicatorDisplayPosition.MiddleRight ||
+                        pos == IndicatorDisplayPosition.BottomRight)
+                    {
+                        Left = mainOverlay.Left - Width - SIBLING_GAP;
+                    }
+                    else
+                    {
+                        Left = mainOverlay.Right + SIBLING_GAP;
+                    }
+                }
             }
         }
 
@@ -314,7 +296,6 @@ namespace CapsLockIndicatorV3
         public IndicatorOverlay(IndicatorTrigger trigger, int timeoutInMs, IndicatorDisplayPosition position)
         {
             pos = position;
-            OverlayKey = trigger.Key;
 
             if (IsDisposed)
                 return;
@@ -341,16 +322,15 @@ namespace CapsLockIndicatorV3
             }
             ClickThroughWindow();
             RecalculateSize();
-            UpdateAllOverlayPositions();
             BringToFrontNoFocus();
         }
 
-        public IndicatorOverlay(IndicatorTrigger trigger, int timeoutInMs, Color bgColour, Color fgColour, Color bdColour, int bdSize, Font font, IndicatorDisplayPosition position, int indOpacity, bool alwaysShow)
+        public IndicatorOverlay(IndicatorTrigger trigger, int timeoutInMs, Color bgColour, Color fgColour, Color bdColour, int bdSize, Font font, IndicatorDisplayPosition position, int indOpacity, bool alwaysShow, bool isWeaponOverlay = false)
         {
             var ret = 0;
 
             pos = position;
-            OverlayKey = trigger.Key;
+            IsWeaponOverlay = isWeaponOverlay;
 
             InitializeComponent();
             InitializeCommon();
@@ -365,7 +345,7 @@ namespace CapsLockIndicatorV3
             var op = indOpacity / 100d;
             lastOpacity = op;
             ret |= SetOpacity(op);
-            if (timeoutInMs < 0 || alwaysShow || IndicatorTrigger.ShowInfinite(trigger))
+            if (timeoutInMs < 0 || alwaysShow || (!IsWeaponOverlay && IndicatorTrigger.ShowInfinite(trigger)))
             {
                 windowCloseTimer.Enabled = false;
                 fadeTimer.Enabled = false;
@@ -383,7 +363,7 @@ namespace CapsLockIndicatorV3
             if (ret != -1)
                 Show();
 
-            UpdateAllOverlayPositions();
+            UpdatePosition();
             BringToFrontNoFocus();
         }
 
@@ -406,7 +386,6 @@ namespace CapsLockIndicatorV3
         public void UpdateIndicator(IndicatorTrigger trigger, IndicatorDisplayPosition position)
         {
             pos = position;
-            OverlayKey = trigger.Key;
             Opacity = 1;
             contentLabel.Text = trigger.DisplayText;
             opacity_timer_value = 2.0;
@@ -417,7 +396,7 @@ namespace CapsLockIndicatorV3
             ReapplyPadding();
             Show();
             RecalculateSize();
-            UpdateAllOverlayPositions();
+            UpdatePosition();
             SetWindowStyles();
             BringToFrontNoFocus();
         }
@@ -425,11 +404,10 @@ namespace CapsLockIndicatorV3
         public void UpdateIndicator(IndicatorTrigger trigger, int timeoutInMs, IndicatorDisplayPosition position)
         {
             pos = position;
-            OverlayKey = trigger.Key;
             Opacity = 1;
             contentLabel.Text = trigger.DisplayText;
             opacity_timer_value = 2.0;
-            if (timeoutInMs < 0 || IndicatorTrigger.ShowInfinite(trigger))
+            if (timeoutInMs < 0 || (!IsWeaponOverlay && IndicatorTrigger.ShowInfinite(trigger)))
             {
                 windowCloseTimer.Enabled = false;
                 fadeTimer.Enabled = false;
@@ -446,7 +424,7 @@ namespace CapsLockIndicatorV3
             ReapplyPadding();
             Show();
             RecalculateSize();
-            UpdateAllOverlayPositions();
+            UpdatePosition();
             SetWindowStyles();
             BringToFrontNoFocus();
         }
@@ -454,14 +432,13 @@ namespace CapsLockIndicatorV3
         public void UpdateIndicator(IndicatorTrigger trigger, int timeoutInMs, Color bgColour, Color fgColour, Color bdColour, int bdSize, Font font, IndicatorDisplayPosition position, int indOpacity, bool alwaysShow)
         {
             pos = position;
-            OverlayKey = trigger.Key;
             var op = indOpacity / 100d;
             lastOpacity = op;
             SetOpacity(op);
             contentLabel.Text = trigger.DisplayText;
             Font = font;
             opacity_timer_value = 2.0;
-            if (timeoutInMs < 0 || alwaysShow || IndicatorTrigger.ShowInfinite(trigger))
+            if (timeoutInMs < 0 || alwaysShow || (!IsWeaponOverlay && IndicatorTrigger.ShowInfinite(trigger)))
             {
                 windowCloseTimer.Enabled = false;
                 fadeTimer.Enabled = false;
@@ -483,7 +460,7 @@ namespace CapsLockIndicatorV3
             Show();
             RecalculateSize();
             Invalidate();
-            UpdateAllOverlayPositions();
+            UpdatePosition();
             SetWindowStyles();
             BringToFrontNoFocus();
         }
@@ -491,7 +468,6 @@ namespace CapsLockIndicatorV3
         void WindowCloseTimerTick(object sender, EventArgs e)
         {
             Hide();
-            UpdateAllOverlayPositions();
         }
 
         private void fadeTimer_Tick(object sender, EventArgs e)
