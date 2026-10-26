@@ -36,6 +36,62 @@ namespace CapsLockIndicatorV3
         public static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, IntPtr lParam);
         const int BM_SETIMAGE = 0x00F7;
 
+        // === ОТСЛЕЖИВАНИЕ КОМБИНАЦИЙ ВЫБОРА ОРУЖИЯ (СИНХРОНИЗАЦИЯ С G HUB) ===
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        private const int VK_XBUTTON1 = 0x05; // Нижняя боковая кнопка мыши (Mouse 4 -> AR)
+        private const int VK_XBUTTON2 = 0x06; // Верхняя боковая кнопка мыши (Mouse 5 -> DMR)
+        private const int VK_RSHIFT   = 0xA1; // Правый Shift
+        private const int VK_RCONTROL = 0xA3; // Правый Ctrl
+        private const int VK_RMENU    = 0xA5; // Правый Alt
+
+        private string activeCombatMode = "AR";
+        private string currentAutoWeapon = "BERYL";
+        private string currentAutoCombo = "FN+B";
+        private string currentDMR = "MK12";
+
+        private bool prevMouse4Down = false;
+        private bool prevMouse5Down = false;
+        private bool weaponOverlayInitialized = false;
+
+        private static bool IsKeyPressed(int vKey)
+        {
+            return (GetAsyncKeyState(vKey) & 0x8000) != 0;
+        }
+
+        private bool CheckAutoWeaponHotkey(out string weaponName, out string comboName)
+        {
+            bool rc = IsKeyPressed(VK_RCONTROL);
+            bool ra = IsKeyPressed(VK_RMENU);
+            bool rs = IsKeyPressed(VK_RSHIFT);
+
+            weaponName = null;
+            comboName = null;
+
+            if (!rc && !ra && !rs)
+                return false;
+
+            if (rc && !ra && !rs) { weaponName = "BERYL";     comboName = "FN+B"; return true; }
+            if (!rc && ra && !rs) { weaponName = "M416";      comboName = "FN+M"; return true; }
+            if (!rc && !ra && rs) { weaponName = "UNIVERSAL"; comboName = "FN+U"; return true; }
+            if (rc && ra && !rs)  { weaponName = "ACE32";     comboName = "FN+A"; return true; }
+            if (rc && !ra && rs)  { weaponName = "AKM";       comboName = "FN+K"; return true; }
+            if (!rc && ra && rs)  { weaponName = "VSS";       comboName = "FN+V"; return true; }
+            if (rc && ra && rs)   { weaponName = "MP5K";      comboName = "FN+P"; return true; }
+
+            return false;
+        }
+
+        private string FormatWeaponOverlayText()
+        {
+            if (activeCombatMode == "DMR")
+                return string.Format("[DMR] {0} (Mouse5)", currentDMR);
+            else
+                return string.Format("[AR] {0} ({1})", currentAutoWeapon, currentAutoCombo);
+        }
+        // =====================================================================
+
         public bool isHidden = false;
 
         // Define variables used to load the icons from resources.resx
@@ -264,6 +320,8 @@ namespace CapsLockIndicatorV3
         private void SettingsManager_SettingChanged(object sender, string e)
         {
             RefreshCachedSettings();
+            if (!showNoNotification.Checked)
+                ShowWeaponOverlay();
         }
 
         private void RefreshCachedSettings()
@@ -565,6 +623,8 @@ namespace CapsLockIndicatorV3
 
                 foreach (var i in Application.OpenForms.OfType<IndicatorOverlay>().Where(f => !f.IsDisposed))
                     i.Close();
+
+                weaponOverlayInitialized = false;
             }
         }
 
@@ -662,7 +722,7 @@ namespace CapsLockIndicatorV3
             aboutPanelTopBorder.BackColor =
             appNameLabel.LinkColor =
             appNameLabel.ActiveLinkColor =
-                dark ? Color.FromArgb(255, 196, 204, 238) : Color.FromArgb(255, 52, 77, 180); ;
+                dark ? Color.FromArgb(255, 196, 204, 238) : Color.FromArgb(255, 52, 77, 180);
             logo.Image = (Bitmap)resources.GetObject("logo" + (dark ? "_dark" : ""));
 
             foreach (TabPage p in tabControl1.TabPages)
@@ -839,30 +899,6 @@ namespace CapsLockIndicatorV3
             ApplyEOLStrings();
         }
 
-        void ShowCapsOverlay()
-        {
-            ShowOverlay(new IndicatorTrigger()
-            {
-                DisplayText = KeyHelper.isCapslockActive ?
-                  (SettingsManager.Get<string>("customMessageCapsOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOn") : string.Format(strings.keyIsOn, "AR/Caps lock")) :
-                  (SettingsManager.Get<string>("customMessageCapsOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOff") : string.Format(strings.keyIsOff, "AR/Caps lock")),
-                NewState = KeyHelper.isCapslockActive,
-                Key = IndicatorKey.Caps
-            });
-        }
-
-        void ShowScrollOverlay()
-        {
-            ShowOverlay(new IndicatorTrigger()
-            {
-                DisplayText = KeyHelper.isScrolllockActive ?
-                  (SettingsManager.Get<string>("customMessageScrollOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOn") : string.Format(strings.keyIsOn, "DMR/Scroll lock")) :
-                  (SettingsManager.Get<string>("customMessageScrollOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOff") : string.Format(strings.keyIsOff, "DMR/Scroll lock")),
-                NewState = KeyHelper.isScrolllockActive,
-                Key = IndicatorKey.Scroll
-            });
-        }
-
         // This timer ticks approx. 60 times a second
         void UpdateTimerTick(object sender, EventArgs e)
         {
@@ -888,7 +924,34 @@ namespace CapsLockIndicatorV3
 
             generalIcon.Visible = !showNum && !showCaps && !showScroll;
 
-            // Handle the overlay
+            // --- ОТСЛЕЖИВАНИЕ КОМБИНАЦИЙ ВЫБОРА ОРУЖИЯ (MOUSE 4 / MOUSE 5 + ПРАВЫЕ МОДИФИКАТОРЫ) ---
+            bool m4Down = IsKeyPressed(VK_XBUTTON1);
+            bool m5Down = IsKeyPressed(VK_XBUTTON2);
+            bool weaponChanged = false;
+
+            if (m4Down && !prevMouse4Down)
+            {
+                if (CheckAutoWeaponHotkey(out string newWeapon, out string newCombo))
+                {
+                    currentAutoWeapon = newWeapon;
+                    currentAutoCombo = newCombo;
+                }
+                activeCombatMode = "AR";
+                weaponChanged = true;
+            }
+
+            if (m5Down && !prevMouse5Down)
+            {
+                activeCombatMode = "DMR";
+                weaponChanged = true;
+            }
+
+            prevMouse4Down = m4Down;
+            prevMouse5Down = m5Down;
+
+            bool capsChanged = (capsState != KeyHelper.isCapslockActive);
+
+            // Handle the standard keyoverlays
             if (numState != KeyHelper.isNumlockActive && enableNumInd.Checked && !showNoNotification.Checked)
                 ShowOverlay(new IndicatorTrigger()
                 {
@@ -899,11 +962,32 @@ namespace CapsLockIndicatorV3
                     Key = IndicatorKey.Num
                 });
 
-            if (capsState != KeyHelper.isCapslockActive && enableCapsInd.Checked && !showNoNotification.Checked)
-                ShowCapsOverlay();
+            if (capsChanged && enableCapsInd.Checked && !showNoNotification.Checked)
+                ShowOverlay(new IndicatorTrigger()
+                {
+                    DisplayText = KeyHelper.isCapslockActive ?
+                      (SettingsManager.Get<string>("customMessageCapsOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOn") : string.Format(strings.keyIsOn, strings.capsLock)) :
+                      (SettingsManager.Get<string>("customMessageCapsOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageCapsOff") : string.Format(strings.keyIsOff, strings.capsLock)),
+                    NewState = KeyHelper.isCapslockActive,
+                    Key = IndicatorKey.Caps
+                });
 
             if (scrollState != KeyHelper.isScrolllockActive && enableScrollInd.Checked && !showNoNotification.Checked)
-                ShowScrollOverlay();
+                ShowOverlay(new IndicatorTrigger()
+                {
+                    DisplayText = KeyHelper.isScrolllockActive ?
+                      (SettingsManager.Get<string>("customMessageScrollOn").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOn") : string.Format(strings.keyIsOn, strings.scrollLock)) :
+                      (SettingsManager.Get<string>("customMessageScrollOff").Trim().Length > 0 ? SettingsManager.Get<string>("customMessageScrollOff") : string.Format(strings.keyIsOff, strings.scrollLock)),
+                    NewState = KeyHelper.isScrolllockActive,
+                    Key = IndicatorKey.Scroll
+                });
+
+            // Обновляем второе окошко с оружием при старте, смене оружия или переключении CapsLock
+            if (!showNoNotification.Checked && (!weaponOverlayInitialized || weaponChanged || capsChanged))
+            {
+                ShowWeaponOverlay();
+                weaponOverlayInitialized = true;
+            }
 
             // Reset the values
             numState = KeyHelper.isNumlockActive;
@@ -911,44 +995,98 @@ namespace CapsLockIndicatorV3
             scrollState = KeyHelper.isScrolllockActive;
         }
 
+        // Отображение основного окна статуса клавиши (CapsLock / NumLock / ScrollLock)
         void ShowOverlay(IndicatorTrigger trigger)
         {
             var isActive = trigger.NewState;
             int timeOut = SettingsManager.Get<int>("indDisplayTime");
             var alwaysShow = SettingsManager.Get<bool>("alwaysShowWhenActive") && isActive;
 
-            var existingOverlay = Application.OpenForms
+            var existingMain = Application.OpenForms
                 .OfType<IndicatorOverlay>()
-                .FirstOrDefault(f => !f.IsDisposed && f.OverlayKey == trigger.Key);
+                .FirstOrDefault(f => !f.IsDisposed && !f.IsWeaponOverlay);
 
-            if (existingOverlay != null)
+            if (existingMain != null)
             {
-                existingOverlay.UpdateIndicator(
-                    trigger
-                  , timeOut
-                  , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
-                  , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
-                  , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
-                  , SettingsManager.Get<int>("bdSize")
-                  , SettingsManager.GetOrDefault<Font>("indFont")
-                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                  , SettingsManager.Get<int>("indOpacity")
-                  , alwaysShow
+                existingMain.UpdateIndicator(
+                      trigger
+                    , timeOut
+                    , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
+                    , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
+                    , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
+                    , SettingsManager.Get<int>("bdSize")
+                    , SettingsManager.GetOrDefault<Font>("indFont")
+                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                    , SettingsManager.Get<int>("indOpacity")
+                    , alwaysShow
                 );
             }
             else
             {
                 IndicatorOverlay indicatorOverlay = new IndicatorOverlay(
-                    trigger
-                  , timeOut
-                  , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
-                  , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
-                  , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
-                  , SettingsManager.Get<int>("bdSize")
-                  , SettingsManager.GetOrDefault<Font>("indFont")
-                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                  , SettingsManager.Get<int>("indOpacity")
-                  , alwaysShow
+                      trigger
+                    , timeOut
+                    , isActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
+                    , isActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
+                    , isActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
+                    , SettingsManager.Get<int>("bdSize")
+                    , SettingsManager.GetOrDefault<Font>("indFont")
+                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                    , SettingsManager.Get<int>("indOpacity")
+                    , alwaysShow
+                    , false
+                );
+            }
+        }
+
+        // Отображение второго окошка рядом (активное оружие + последняя нажатая комбинация)
+        void ShowWeaponOverlay()
+        {
+            bool isCapsActive = KeyHelper.isCapslockActive;
+            var trigger = new IndicatorTrigger()
+            {
+                DisplayText = FormatWeaponOverlayText(),
+                NewState = isCapsActive,
+                Key = IndicatorKey.None
+            };
+
+            // Окно оружия отображается постоянно рядом с индикатором (или меняет цвет в зависимости от CapsLock)
+            int timeOut = -1;
+            bool alwaysShow = true;
+
+            var existingWeaponOverlay = Application.OpenForms
+                .OfType<IndicatorOverlay>()
+                .FirstOrDefault(f => !f.IsDisposed && f.IsWeaponOverlay);
+
+            if (existingWeaponOverlay != null)
+            {
+                existingWeaponOverlay.UpdateIndicator(
+                      trigger
+                    , timeOut
+                    , isCapsActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
+                    , isCapsActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
+                    , isCapsActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
+                    , SettingsManager.Get<int>("bdSize")
+                    , SettingsManager.GetOrDefault<Font>("indFont")
+                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                    , SettingsManager.Get<int>("indOpacity")
+                    , alwaysShow
+                );
+            }
+            else
+            {
+                IndicatorOverlay weaponOverlay = new IndicatorOverlay(
+                      trigger
+                    , timeOut
+                    , isCapsActive ? SettingsManager.Get<Color>("indBgColourActive") : SettingsManager.Get<Color>("indBgColourInactive")
+                    , isCapsActive ? SettingsManager.Get<Color>("indFgColourActive") : SettingsManager.Get<Color>("indFgColourInactive")
+                    , isCapsActive ? SettingsManager.Get<Color>("indBdColourActive") : SettingsManager.Get<Color>("indBdColourInactive")
+                    , SettingsManager.Get<int>("bdSize")
+                    , SettingsManager.GetOrDefault<Font>("indFont")
+                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                    , SettingsManager.Get<int>("indOpacity")
+                    , alwaysShow
+                    , true
                 );
             }
         }
@@ -960,46 +1098,47 @@ namespace CapsLockIndicatorV3
                 timeOut = 2000;
             var alwaysShow = false;
 
-            var existingOverlay = Application.OpenForms
+            var existingMain = Application.OpenForms
                 .OfType<IndicatorOverlay>()
-                .FirstOrDefault(f => !f.IsDisposed && f.OverlayKey == IndicatorKey.None);
+                .FirstOrDefault(f => !f.IsDisposed && !f.IsWeaponOverlay);
 
-            if (existingOverlay != null)
+            if (existingMain != null)
             {
-                existingOverlay.UpdateIndicator(
-                    new IndicatorTrigger()
-                    {
-                        DisplayText = message,
-                        Key = IndicatorKey.None
-                    }
-                  , timeOut
-                  , SettingsManager.Get<Color>("indBgColourInactive")
-                  , SettingsManager.Get<Color>("indFgColourInactive")
-                  , SettingsManager.Get<Color>("indFgColourInactive")
-                  , SettingsManager.Get<int>("bdSize")
-                  , SettingsManager.GetOrDefault<Font>("indFont")
-                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                  , SettingsManager.Get<int>("indOpacity")
-                  , alwaysShow
+                existingMain.UpdateIndicator(
+                      new IndicatorTrigger()
+                      {
+                          DisplayText = message,
+                          Key = IndicatorKey.None
+                      }
+                    , timeOut
+                    , SettingsManager.Get<Color>("indBgColourInactive")
+                    , SettingsManager.Get<Color>("indFgColourInactive")
+                    , SettingsManager.Get<Color>("indFgColourInactive")
+                    , SettingsManager.Get<int>("bdSize")
+                    , SettingsManager.GetOrDefault<Font>("indFont")
+                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                    , SettingsManager.Get<int>("indOpacity")
+                    , alwaysShow
                 );
             }
             else
             {
                 IndicatorOverlay indicatorOverlay = new IndicatorOverlay(
-                    new IndicatorTrigger()
-                    {
-                        DisplayText = message,
-                        Key = IndicatorKey.None
-                    }
-                  , timeOut
-                  , SettingsManager.Get<Color>("indBgColourInactive")
-                  , SettingsManager.Get<Color>("indFgColourInactive")
-                  , SettingsManager.Get<Color>("indFgColourInactive")
-                  , SettingsManager.Get<int>("bdSize")
-                  , SettingsManager.GetOrDefault<Font>("indFont")
-                  , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
-                  , SettingsManager.Get<int>("indOpacity")
-                  , alwaysShow
+                      new IndicatorTrigger()
+                      {
+                          DisplayText = message,
+                          Key = IndicatorKey.None
+                      }
+                    , timeOut
+                    , SettingsManager.Get<Color>("indBgColourInactive")
+                    , SettingsManager.Get<Color>("indFgColourInactive")
+                    , SettingsManager.Get<Color>("indFgColourInactive")
+                    , SettingsManager.Get<int>("bdSize")
+                    , SettingsManager.GetOrDefault<Font>("indFont")
+                    , SettingsManager.Get<IndicatorDisplayPosition>("overlayPosition")
+                    , SettingsManager.Get<int>("indOpacity")
+                    , alwaysShow
+                    , false
                 );
             }
         }
@@ -1010,11 +1149,22 @@ namespace CapsLockIndicatorV3
             SettingsManager.Set("noIco", showNoIcons.Checked);
             SettingsManager.Save();
         }
+
         void ShowNoNotificationCheckedChanged(object sender, EventArgs e)
         {
             indicatorGroup.Enabled = !showNoNotification.Checked;
             SettingsManager.Set("noInd", showNoNotification.Checked);
             SettingsManager.Save();
+
+            if (showNoNotification.Checked)
+            {
+                foreach (var f in Application.OpenForms.OfType<IndicatorOverlay>().Where(x => !x.IsDisposed))
+                    f.Hide();
+            }
+            else
+            {
+                ShowWeaponOverlay();
+            }
         }
 
         void handleVersion(string xmlData)
@@ -1083,7 +1233,7 @@ namespace CapsLockIndicatorV3
                         dd.DownloadURL = download_url;
                         dd.ShowDialog();
                     }
-                    else if (res == DialogResult.Ignore) // Download manually
+                    else if (res == DialogResult.Ignore)
                     {
                         Process.Start(release_url + "&ov=" + currentVersion);
                     }
@@ -1091,7 +1241,6 @@ namespace CapsLockIndicatorV3
             }
             catch (Exception)
             {
-
             }
 
             checkForUpdatesButton.Text = strings.checkForUpdates;
@@ -1114,12 +1263,6 @@ namespace CapsLockIndicatorV3
 
             if (SettingsManager.Get<bool>("checkForUpdates"))
                 doVersionCheck(false);
-
-            if (enableCapsInd.Checked && !showNoNotification.Checked)
-                ShowCapsOverlay();
-
-            if (enableScrollInd.Checked && !showNoNotification.Checked)
-                ShowScrollOverlay();
         }
 
         void ExitApplicationClick(object sender, EventArgs e)
@@ -1130,6 +1273,7 @@ namespace CapsLockIndicatorV3
                 Exit();
             }
         }
+
         void HideWindowClick(object sender, EventArgs e)
         {
             HideForm();
@@ -1334,7 +1478,6 @@ namespace CapsLockIndicatorV3
 
         private void advSettings_Click(object sender, EventArgs e)
         {
-
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -1433,7 +1576,6 @@ namespace CapsLockIndicatorV3
 
         private void cancelButton_Click(object sender, EventArgs e)
         {
-
         }
 
         private void positionButton_CheckedChanged(object sender, EventArgs e)
